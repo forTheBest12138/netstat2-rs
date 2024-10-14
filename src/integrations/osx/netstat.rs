@@ -437,10 +437,59 @@ fn parse_udp_socket_info(pid: PID, fd: ProcFDInfo, sinfo: socket_fdinfo) -> Opti
     Some(sock_info)
 }
 
+fn match_ip_addr(ipaddr: &IpAddr, ipv46: &[u8]) -> bool {
+    match ipaddr {
+        IpAddr::V4(ip4) => {
+            ip4.octets() == ipv46
+        }
+        IpAddr::V6(ip6) => {
+            ip6.octets() == ipv46
+        }
+    }
+}
+
+pub fn port_to_pid(is_ipv4: bool, is_tcp: bool, ipv46: &[u8], port: u16) -> Result<isize, Error> {
+    let pids = list_pids(ProcType::ProcAllPIDS)?;
+    for pid in pids {
+        let fds = match list_all_fds_for_pid(pid) {
+            Ok(fds) => fds,
+            Err(e) => {
+                continue;
+            }
+        };
+        for fd in fds {
+            if fd.proc_fdtype == ProcFDType::Socket {
+                if let Ok(FDInformation::SocketInfo(info)) = get_fd_information(pid, fd) {
+                    if (info.psi.soi_family == AF_INET as i32 || info.psi.soi_family == AF_INET6 as i32) {
+                        let ipaddr: IpAddr;
+                        // tcp
+                        if is_tcp && info.psi.soi_protocol == IPPROTO_TCP as i32 {
+                            if let Some(row) = parse_tcp_socket_info(pid, fd, info) {
+                                if port == row.local_port && match_ip_addr(&row.local_addr, ipv46) {
+                                    return Ok(pid as isize);
+                                }
+                            }
+                        }
+                        // udp
+                        else if info.psi.soi_protocol == IPPROTO_UDP as i32 {
+                            if let Some(row) = parse_udp_socket_info(pid, fd, info) {
+                                if port == row.local_port && match_ip_addr(&row.local_addr, ipv46) {
+                                    return Ok(pid as isize);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(-1)
+}
+
 pub fn iterate_netstat_info(
     af_flags: AddressFamilyFlags,
     proto_flags: ProtocolFlags,
-) -> Result<impl Iterator<Item = Result<SocketInfo, Error>>, Error> {
+) -> Result<impl Iterator<Item=Result<SocketInfo, Error>>, Error> {
     let ipv4 = af_flags.contains(AddressFamilyFlags::IPV4);
     let ipv6 = af_flags.contains(AddressFamilyFlags::IPV6);
     let tcp = proto_flags.contains(ProtocolFlags::TCP);
@@ -530,5 +579,12 @@ mod tests {
             .collect();
         println!("{:#?}", ns);
         assert!(!ns.is_empty());
+    }
+
+    #[test]
+    fn test_port_to_pid() {
+        if let Ok(pid) = port_to_pid(true, true, &[127, 0,0,1], 2333) {
+            println!("{:#?}", pid);
+        }
     }
 }
