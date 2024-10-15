@@ -8,13 +8,14 @@ use std::ptr;
 use std::{io, mem};
 
 use byteorder::{ByteOrder, NetworkEndian};
+use libc::creat;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
 use crate::integrations::osx::ffi::libproc::*;
 use crate::types::error::Error;
 use crate::types::{AddressFamilyFlags, ProtocolFlags};
-use crate::{ProtocolSocketInfo, SocketInfo, TcpSocketInfo, TcpState, UdpSocketInfo};
+use crate::{match_ip_addr, ProtocolSocketInfo, SocketInfo, TcpSocketInfo, TcpState, UdpSocketInfo};
 
 pub type PID = c_int;
 
@@ -437,18 +438,7 @@ fn parse_udp_socket_info(pid: PID, fd: ProcFDInfo, sinfo: socket_fdinfo) -> Opti
     Some(sock_info)
 }
 
-fn match_ip_addr(ipaddr: &IpAddr, ipv46: &[u8]) -> bool {
-    match ipaddr {
-        IpAddr::V4(ip4) => {
-            ip4.octets() == ipv46
-        }
-        IpAddr::V6(ip6) => {
-            ip6.octets() == ipv46
-        }
-    }
-}
-
-pub fn port_to_pid(is_ipv4: bool, is_tcp: bool, ipv46: &[u8], port: u16) -> Result<isize, Error> {
+pub fn port_to_pid(is_ipv4: bool, is_tcp: bool, ipv46: &[u8], port: u16) -> core::result::Result<isize, Box<dyn std::error::Error>>  {
     let pids = list_pids(ProcType::ProcAllPIDS)?;
     for pid in pids {
         let fds = match list_all_fds_for_pid(pid) {
@@ -465,7 +455,7 @@ pub fn port_to_pid(is_ipv4: bool, is_tcp: bool, ipv46: &[u8], port: u16) -> Resu
                         // tcp
                         if is_tcp && info.psi.soi_protocol == IPPROTO_TCP as i32 {
                             if let Some(row) = parse_tcp_socket_info(pid, fd, info) {
-                                if port == row.local_port && match_ip_addr(&row.local_addr, ipv46) {
+                                if port == row.local_port && crate::match_ip_addr(&row.local_addr, ipv46) {
                                     return Ok(pid as isize);
                                 }
                             }

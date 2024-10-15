@@ -132,11 +132,7 @@ unsafe fn send_diag_msg(sockfd: c_int, family: __u8, protocol: __u8) -> Result<(
     }
 }
 
-unsafe fn parse_diag_msg(
-    diag_msg: &inet_diag_msg,
-    protocol: __u8,
-    rtalen: usize,
-) -> Result<SocketInfo, Error> {
+unsafe fn parse_diag_msg( diag_msg: &inet_diag_msg, protocol: __u8, rtalen: usize, ) -> Result<SocketInfo, Error> {
     let src_port = u16::from_be(diag_msg.id.sport);
     let dst_port = u16::from_be(diag_msg.id.dport);
     let src_ip = parse_ip(diag_msg.family, &diag_msg.id.src)?;
