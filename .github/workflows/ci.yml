@@ -23,7 +23,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: "1.82.0"
+          toolchain: "1.87.0"
           default: true
 
       - run: cargo test
@@ -42,7 +42,7 @@ jobs:
         if: matrix.os == 'macos-latest'
 
       - name: setup zig for cargo-zigbuild (on macOS)
-        uses: mlugg/setup-zig@v1
+        uses: mlugg/setup-zig@v2
         if: matrix.os == 'macos-latest'
 
       - name: run cargo-zigbuild for Linux (on macOS)
