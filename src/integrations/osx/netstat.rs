@@ -14,7 +14,7 @@ use num_traits::FromPrimitive;
 use crate::integrations::osx::libproc_bindings::*;
 use crate::types::error::Error;
 use crate::types::{AddressFamilyFlags, ProtocolFlags};
-use crate::{ProtocolSocketInfo, SocketInfo, TcpSocketInfo, TcpState, UdpSocketInfo};
+use crate::{match_ip_addr, ProtocolSocketInfo, SocketInfo, TcpSocketInfo, TcpState, UdpSocketInfo};
 
 pub type PID = c_int;
 
@@ -500,6 +500,44 @@ pub fn iterate_netstat_info(
     }
 
     Ok(results.into_iter())
+}
+
+pub fn port_to_pid(is_ipv4: bool, is_tcp: bool, ipv46: &[u8], port: u16) -> core::result::Result<isize, Box<dyn std::error::Error>>  {
+    let pids = list_pids(ProcType::ProcAllPIDS)?;
+    for pid in pids {
+        let fds = match list_all_fds_for_pid(pid) {
+            Ok(fds) => fds,
+            Err(e) => {
+                continue;
+            }
+        };
+        for fd in fds {
+            if fd.proc_fdtype == ProcFDType::Socket {
+                if let Ok(FDInformation::SocketInfo(info)) = get_fd_information(pid, fd) {
+                    if (info.psi.soi_family == AF_INET as i32 || info.psi.soi_family == AF_INET6 as i32) {
+                        let ipaddr: IpAddr;
+                        // tcp
+                        if is_tcp && info.psi.soi_protocol == IPPROTO_TCP as i32 {
+                            if let Some(row) = parse_tcp_socket_info(pid, fd, info) {
+                                if port == row.local_port && match_ip_addr(&row.local_addr, ipv46) {
+                                    return Ok(pid as isize);
+                                }
+                            }
+                        }
+                        // udp
+                        else if info.psi.soi_protocol == IPPROTO_UDP as i32 {
+                            if let Some(row) = parse_udp_socket_info(pid, fd, info) {
+                                if port == row.local_port && match_ip_addr(&row.local_addr, ipv46) {
+                                    return Ok(pid as isize);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(-1)
 }
 
 #[cfg(test)]

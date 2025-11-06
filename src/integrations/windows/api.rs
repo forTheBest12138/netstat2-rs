@@ -1,5 +1,6 @@
 use crate::integrations::windows::ffi::*;
 use crate::integrations::windows::socket_table_iterator::SocketTableIterator;
+use crate::match_ip_addr;
 use crate::types::error::*;
 use crate::types::*;
 
@@ -49,4 +50,30 @@ pub fn iterate_sockets_info_without_pids(
     }
 
     Ok(iterators.into_iter().flatten())
+}
+
+pub fn port_to_pid(is_ipv4: bool, is_tcp: bool, ipv46: &[u8], port: u16) -> core::result::Result<isize, Box<dyn std::error::Error>> {
+    let table: SocketTableIterator;
+    if is_ipv4 {
+        table = if is_tcp { SocketTableIterator::new::<MIB_TCPTABLE_OWNER_PID>()? } else { SocketTableIterator::new::<MIB_UDPTABLE_OWNER_PID>()? };
+    } else {
+        table = if is_tcp { SocketTableIterator::new::<MIB_TCP6TABLE_OWNER_PID>()? } else { SocketTableIterator::new::<MIB_UDP6TABLE_OWNER_PID>()? };
+    }
+    for i in table {
+        if let Ok(info) = i {
+            match info.protocol_socket_info {
+                ProtocolSocketInfo::Tcp(tcp_info) => {
+                    if tcp_info.local_port == port && match_ip_addr(&tcp_info.local_addr, ipv46) {
+                        return Ok(info.associated_pids[0] as isize);
+                    }
+                }
+                ProtocolSocketInfo::Udp(udp_info) => {
+                    if udp_info.local_port == port && match_ip_addr(&udp_info.local_addr, ipv46) {
+                        return Ok(info.associated_pids[0] as isize);
+                    }
+                }
+            }
+        }
+    }
+    Ok(-1)
 }
